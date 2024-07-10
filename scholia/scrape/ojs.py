@@ -1,6 +1,7 @@
-r"""Scraping Open Journal Systems.
+"""Scraping Open Journal Systems.
 
 Usage:
+  scholia.scrape.ojs journal_url_to_quickstatements <url>
   scholia.scrape.ojs scrape-paper-from-url <url>
   scholia.scrape.ojs issue-url-to-quickstatements [options] <url>
   scholia.scrape.ojs paper-url-to-q <url>
@@ -58,6 +59,38 @@ SELECT ?paper WHERE {{
 }}
 """)
 
+ISSN_TO_Q_QUERY = u("""
+SELECT DISTINCT ?journal WHERE {{
+      ?journal wdt:P236 "1171-3283" .
+}}    
+""")
+
+def journal_url_to_quickstatements(url: str, iso639=None) ->  str: 
+    """Scrape a journal homepage and generate quickstatements
+
+    """
+
+    query = ISSN_TO_Q_QUERY.format(
+        issn='1171-3283')
+    response = requests.get(WDQS_URL,
+                            params={'query': query, 'format': 'json'},
+                            headers=HEADERS)
+
+
+    print(response)
+    print(response.json())
+    data = response.json()['results']['bindings']
+
+    print (data)
+    if len(data) == 0 or not data[0]:
+        # Not found
+        return ''
+    print( str(data[0]['journal']['value'][31:]))
+    
+    
+    return "quickstatementsq"
+
+    
 
 def issue_url_to_paper_urls(url):
     """Scrape paper URLs from issue URL.
@@ -435,8 +468,13 @@ def main():
 
     # Ignore broken pipe errors
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    
+    if arguments['journal_url_to_quickstatements']:
+        url = arguments['<url>']
+        qs = journal_url_to_quickstatements(url)
+        os.write(output_file, qs.encode(output_encoding) + b('\n'))
 
-    if arguments['issue-url-to-quickstatements']:
+    elif arguments['issue-url-to-quickstatements']:
         url = arguments['<url>']
         qs = issue_url_to_quickstatements(url, iso639=iso639)
         os.write(output_file, qs.encode(output_encoding) + b('\n'))
