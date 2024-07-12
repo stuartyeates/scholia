@@ -36,8 +36,11 @@ from ..qs import paper_to_quickstatements
 from ..query import iso639_to_q, issn_to_qs, SPARQL_ENDPOINT as WDQS_URL
 from ..utils import escape_string, pages_to_number_of_pages
 
+import ssl
 
+#At least some sites are blocking scholia...
 USER_AGENT = 'Scholia'
+#USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 HEADERS = {'User-Agent': USER_AGENT}
 
@@ -61,35 +64,66 @@ SELECT ?paper WHERE {{
 
 ISSN_TO_Q_QUERY = u("""
 SELECT DISTINCT ?journal WHERE {{
+      ?journal wdt:P236 "{issn}" .
+}}    
+""")
+ISSN_TO_Q_QUERY2 = u("""
+SELECT DISTINCT ?journal WHERE {{
       ?journal wdt:P236 "1171-3283" .
 }}    
 """)
+
+def issn_to_q(issn: str) ->  str: 
+    """Scrape a journal homepage and generate quickstatements
+
+    """
+    query = ISSN_TO_Q_QUERY.format(
+        issn=issn)
+    response = requests.get(WDQS_URL,
+                            params={'query': query, 'format': 'json'},
+                            headers=HEADERS)
+    data = response.json()['results']['bindings']
+    if len(data) == 0 or not data[0] or not data[0]['journal']:
+        return ''
+    q = str(data[0]['journal']['value'][31:])
+    
+    
+    return q
+
+def is_OJS(tree) -> bool:
+    """ Return true if soup is an OJS HTML page, checked three ways. """
+    generatorOJS = len(tree.xpath("//meta[@name='generator']/@content[contains(.,'Open Journal Systems')]")) != 0
+    libsOJS =  len(tree.xpath("//script/@src[contains(.,'/pkp/')]")) != 0 
+    linksOJS = len(tree.xpath("//a/@href[contains(.,'/aboutThisPublishingSystem')]")) != 0
+    pkpBlock = len(tree.xpath("//*/@class[contains(.,'pkp_block')]")) != 0
+    print(" " + str(generatorOJS) + " /  " + str(libsOJS) + " / "  + str(linksOJS)  + " / "  + str(pkpBlock))
+    #removing this link because many people remove the PKP/OJS branding
+    #return generatorOJS and libsOJS and linksOJS
+    return generatorOJS or libsOJS or linksOJS or pkpBlock
+                                                                                                                           
 
 def journal_url_to_quickstatements(url: str, iso639=None) ->  str: 
     """Scrape a journal homepage and generate quickstatements
 
     """
 
-    query = ISSN_TO_Q_QUERY.format(
-        issn='1171-3283')
-    response = requests.get(WDQS_URL,
-                            params={'query': query, 'format': 'json'},
-                            headers=HEADERS)
+    home_response = requests.get(url, headers=HEADERS, verify=False)
+    home_tree = etree.HTML(home_response.content)
 
-
-    print(response)
-    print(response.json())
-    data = response.json()['results']['bindings']
-
-    print (data)
-    if len(data) == 0 or not data[0]:
-        # Not found
-        return ''
-    print( str(data[0]['journal']['value'][31:]))
+    redirected = home_response.url != url
+    if (redirected):
+        print ("redirected to" + home_response.url)
+        return journal_url_to_quickstatements(home_response.url, iso639)
     
-    
-    return "quickstatementsq"
-
+    archive_url = url + '/issue/archive'
+    if (is_OJS(home_tree)):
+        archive_response = requests.get(archive_url, headers=HEADERS, verify=False)
+        archive_tree = etree.HTML(archive_response.content)
+        if (is_OJS(archive_tree)):
+            return "URL \"" + url + "\" appears lead to an OJS journal"
+       
+    print(etree.tostring(home_tree))
+    return "XXXXXXXXXXXX URL  \"" + url + "\" does not appear lead to an OJS journal XXXXXXXXXXXXX"
     
 
 def issue_url_to_paper_urls(url):
@@ -465,6 +499,15 @@ def main():
         # stdout
         output_file = 1
     output_encoding = arguments['--oe']
+
+    #turn off some ssl validation
+    context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+    context.verify_mode = ssl.CERT_NONE
+    context.check_hostname = False
+    context.load_default_certs()
+
+    import urllib3
+    urllib3.disable_warnings()
 
     # Ignore broken pipe errors
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
