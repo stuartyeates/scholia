@@ -67,28 +67,51 @@ SELECT DISTINCT ?journal WHERE {{
       ?journal wdt:P236 "{issn}" .
 }}    
 """)
-ISSN_TO_Q_QUERY2 = u("""
-SELECT DISTINCT ?journal WHERE {{
-      ?journal wdt:P236 "1171-3283" .
-}}    
+Q_TO_DETAILS = u("""
+SELECT DISTINCT  ?abbrev ?title  ?software  
+   (GROUP_CONCAT(DISTINCT ?issn; SEPARATOR = "|") AS ?issns)
+   (GROUP_CONCAT(DISTINCT ?rss; SEPARATOR = "|") AS ?rsss)
+   (GROUP_CONCAT(DISTINCT ?website; SEPARATOR = "|") AS ?websites)
+WHERE {{
+  OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P1019 ?rss }} .
+  OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P236 ?issn }} .
+  OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P1813 ?abbrev }} .
+  OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P1476 ?title }} .
+  OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P856 ?website  }} .
+  OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P408 ?software }} .
+}} 
+GROUP BY  ?abbrev ?title  ?software 
 """)
-
+                                                                                                                          
 def issn_to_q(issn: str) ->  str: 
-    """Scrape a journal homepage and generate quickstatements
-
-    """
+    """Find a wikidata item for an ISSN. """
     query = ISSN_TO_Q_QUERY.format(
         issn=issn)
     response = requests.get(WDQS_URL,
                             params={'query': query, 'format': 'json'},
                             headers=HEADERS)
     data = response.json()['results']['bindings']
+    print(data)
     if len(data) == 0 or not data[0] or not data[0]['journal']:
         return ''
     q = str(data[0]['journal']['value'][31:])
-    
-    
     return q
+
+def q_to_details(q: str) ->  str: 
+    """Find journal core details for from a wikidata item. """
+    query = Q_TO_DETAILS.format(
+        q=q)
+    response = requests.get(WDQS_URL,
+                            params={'query': query, 'format': 'json'},
+                            headers=HEADERS)
+    ##print("q=" +  q)
+    #print(Q_TO_DETAILS)
+    #print(response.json())
+    data = response.json()['results']['bindings']
+    print(data)
+    if len(data) == 0 or not data[0]:
+        return ''
+    return data
 
 def is_OJS(tree) -> bool:
     """ Return true if soup is an OJS HTML page, checked three ways. """
@@ -130,14 +153,28 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
         
             if (is_OJS(item_tree)):
 
+                lang = str(item_tree.xpath("/html/@lang")[0])
                 issn = str(item_tree.xpath("//meta[contains(@name,'citation_issn')]/@content")[0])
                 title = str(item_tree.xpath("//meta[contains(@name,'citation_journal_title')]/@content")[0])
                 abbrev = str(item_tree.xpath("//meta[contains(@name,'citation_journal_abbrev')]/@content")[0])
-                q1 = issn_to_q(issn)
-                print(issn + " / " + title + " / " +  abbrev + " / " + q1)
+                q = issn_to_q(issn)
+                print(issn + " / " + title + " / " +  abbrev + " / " +  lang + " / " + q)
+                data = q_to_details(q)
 
+                result = "\n\n#begin quickstatements\n"
+                if (q == ''):
+                    result += '#there is no item for this journal, creating one\n'
+                    result += 'CREATE\n'
+                    result += 'LAST|Len|' + title + "\n"   #label (en = english)
+                    result += 'LAST|Aen|' + abbrev + "\n"  #alias (en = english)
+                    result += "LAST|Den|Scientific journal called '" + title +"'\n"  #description (en = english)
+                    q = 'LAST'
+                else:
+                    result += '#there is an item for this journal\n'
 
-                return "URL \"" + url + "\" appears lead to an OJS journal"
+                    
+                    
+                return result + "\n\nURL \"" + url + "\" appears lead to an OJS journal"
 
 
 
