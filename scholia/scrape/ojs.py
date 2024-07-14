@@ -115,16 +115,38 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
         print ("redirected to" + home_response.url)
         return journal_url_to_quickstatements(home_response.url, iso639)
     
-    archive_url = url + '/issue/archive'
+    issue_url = url + '/issue/current'
     if (is_OJS(home_tree)):
-        archive_response = requests.get(archive_url, headers=HEADERS, verify=False)
-        archive_tree = etree.HTML(archive_response.content)
-        if (is_OJS(archive_tree)):
-            return "URL \"" + url + "\" appears lead to an OJS journal"
-       
+        issue_response = requests.get(issue_url, headers=HEADERS, verify=False)
+        issue_tree = etree.HTML(issue_response.content)
+
+        item_url = issue_tree.xpath("//a[contains(@href,'article/view')][1]/@href")[0]
+        print("item_url= " + str(item_url))
+        if (is_OJS(issue_tree)):
+            item_response = requests.get(item_url, headers=HEADERS, verify=False)
+            item_tree = etree.HTML(item_response.content)
+            print(str(item_tree.xpath("//meta[contains(@name,'generator')]/@content")))                
+            print(str(item_tree.xpath("//meta[contains(@name,'citation_journal_title')]/@content")))                
+        
+            if (is_OJS(item_tree)):
+
+                issn = str(item_tree.xpath("//meta[contains(@name,'citation_issn')]/@content")[0])
+                title = str(item_tree.xpath("//meta[contains(@name,'citation_journal_title')]/@content")[0])
+                abbrev = str(item_tree.xpath("//meta[contains(@name,'citation_journal_abbrev')]/@content")[0])
+                q1 = issn_to_q(issn)
+                print(issn + " / " + title + " / " +  abbrev + " / " + q1)
+
+
+                return "URL \"" + url + "\" appears lead to an OJS journal"
+
+
+
+            
     print(etree.tostring(home_tree))
     return "XXXXXXXXXXXX URL  \"" + url + "\" does not appear lead to an OJS journal XXXXXXXXXXXXX"
-    
+
+
+
 
 def issue_url_to_paper_urls(url):
     """Scrape paper URLs from issue URL.
