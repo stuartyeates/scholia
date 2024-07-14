@@ -124,6 +124,13 @@ def is_OJS(tree) -> bool:
     #return generatorOJS and libsOJS and linksOJS
     return generatorOJS or libsOJS or linksOJS or pkpBlock
                                                                                                                            
+def get_xpath_as_string(tree, xpath) -> str:
+    """helper function to always return the first match as a string (possibly an empty string)"""
+    lis = tree.xpath(xpath)
+    if (len(lis) > 0):
+        return lis[0]
+    return ''
+
 
 def journal_url_to_quickstatements(url: str, iso639=None) ->  str: 
     """Scrape a journal homepage and generate quickstatements
@@ -153,10 +160,13 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
         
             if (is_OJS(item_tree)):
 
-                lang = str(item_tree.xpath("/html/@lang")[0])
-                issn = str(item_tree.xpath("//meta[contains(@name,'citation_issn')]/@content")[0])
-                title = str(item_tree.xpath("//meta[contains(@name,'citation_journal_title')]/@content")[0])
-                abbrev = str(item_tree.xpath("//meta[contains(@name,'citation_journal_abbrev')]/@content")[0])
+                lang =   get_xpath_as_string(item_tree,"/html/@lang")
+                issn =   get_xpath_as_string(item_tree,"//meta[contains(@name,'citation_issn')]/@content")
+                title =  get_xpath_as_string(item_tree,"//meta[contains(@name,'citation_journal_title')]/@content")
+                abbrev = get_xpath_as_string(item_tree,"//meta[contains(@name,'citation_journal_abbrev')]/@content")
+
+                if (issn == ''):
+                    return "Sorry, not set up to deal with journals without an ISSN yet TODO"
                 q = issn_to_q(issn)
                 print(issn + " / " + title + " / " +  abbrev + " / " +  lang + " / " + q)
                 data = q_to_details(q)
@@ -166,7 +176,7 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
                     result += '#there is no item for this journal, creating one\n'
                     result += 'CREATE\n'
                     result += 'LAST|Len|' + title + "\n"   #label (en = english)
-                    result += 'LAST|Aen|' + abbrev + "\n"  #alias (en = english)
+                    if (abbrev) result += 'LAST|Aen|' + abbrev + "\n"  #alias (en = english)
                     result += "LAST|Den|Scientific journal called '" + title +"'\n"  #description (en = english)
                     q = 'LAST'
                 else:
@@ -174,7 +184,7 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
 
                     
                     
-                return result + "\n\nURL \"" + url + "\" appears lead to an OJS journal"
+                return result + "#end quickstatemnts\n\nURL \"" + url + "\" appears lead to an OJS journal"
 
 
 
