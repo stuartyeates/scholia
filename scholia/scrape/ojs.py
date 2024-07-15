@@ -176,7 +176,8 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
                     result += '#there is no item for this journal, creating one\n'
                     result += 'CREATE\n'
                     result += 'LAST|Len|' + title + "\n"   #label (en = english)
-                    if (abbrev) result += 'LAST|Aen|' + abbrev + "\n"  #alias (en = english)
+                    if (abbrev):
+                        result += 'LAST|Aen|' + abbrev + "\n"  #alias (en = english)
                     result += "LAST|Den|Scientific journal called '" + title +"'\n"  #description (en = english)
                     q = 'LAST'
                 else:
