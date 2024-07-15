@@ -68,10 +68,13 @@ SELECT DISTINCT ?journal WHERE {{
 }}    
 """)
 Q_TO_DETAILS = u("""
-SELECT DISTINCT  ?abbrev ?title  ?software  
+SELECT DISTINCT   
    (GROUP_CONCAT(DISTINCT ?issn; SEPARATOR = "|") AS ?issns)
    (GROUP_CONCAT(DISTINCT ?rss; SEPARATOR = "|") AS ?rsss)
    (GROUP_CONCAT(DISTINCT ?website; SEPARATOR = "|") AS ?websites)
+   (GROUP_CONCAT(DISTINCT ?abbrev; SEPARATOR = "|") AS ?abbrevs)
+   (GROUP_CONCAT(DISTINCT ?title; SEPARATOR = "|") AS ?titles)
+   (GROUP_CONCAT(DISTINCT ?software; SEPARATOR = "|") AS ?softwares)
 WHERE {{
   OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P1019 ?rss }} .
   OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P236 ?issn }} .
@@ -80,7 +83,6 @@ WHERE {{
   OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P856 ?website  }} .
   OPTIONAL {{ <http://www.wikidata.org/entity/{q}> wdt:P408 ?software }} .
 }} 
-GROUP BY  ?abbrev ?title  ?software 
 """)
                                                                                                                           
 def issn_to_q(issn: str) ->  str: 
@@ -133,9 +135,7 @@ def get_xpath_as_string(tree, xpath) -> str:
 
 
 def journal_url_to_quickstatements(url: str, iso639=None) ->  str: 
-    """Scrape a journal homepage and generate quickstatements
-
-    """
+    """Scrape a journal homepage and generate quickstatements"""
 
     home_response = requests.get(url, headers=HEADERS, verify=False)
     home_tree = etree.HTML(home_response.content)
@@ -155,8 +155,8 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
         if (is_OJS(issue_tree)):
             item_response = requests.get(item_url, headers=HEADERS, verify=False)
             item_tree = etree.HTML(item_response.content)
-            print(str(item_tree.xpath("//meta[contains(@name,'generator')]/@content")))                
-            print(str(item_tree.xpath("//meta[contains(@name,'citation_journal_title')]/@content")))                
+            #print(str(item_tree.xpath("//meta[contains(@name,'generator')]/@content")))                
+            #print(str(item_tree.xpath("//meta[contains(@name,'citation_journal_title')]/@content")))                
         
             if (is_OJS(item_tree)):
 
@@ -179,11 +179,37 @@ def journal_url_to_quickstatements(url: str, iso639=None) ->  str:
                     if (abbrev):
                         result += 'LAST|Aen|' + abbrev + "\n"  #alias (en = english)
                     result += "LAST|Den|Scientific journal called '" + title +"'\n"  #description (en = english)
+                    result += "LAST|P407|"+ lang + "\n"
                     q = 'LAST'
                 else:
                     result += '#there is an item for this journal\n'
 
-                    
+                #print (data)
+                if (abbrev != '' and data and data[0]['abbrevs'] and data[0]['abbrevs']['value'] == ''):
+                    result += '#add the abbreviation as  a short title\n'
+                    result += q + '|P1813|' + abbrev + '\n'                 
+                if (data and data[0]['rsss'] and data[0]['rsss']['value'] == ''):
+                    result += '#checking for and adding rss feeds ...\n'
+                    atom_url = url + '/gateway/plugin/WebFeedGatewayPlugin/atom'
+                    if (requests.get(atom_url, headers=HEADERS, verify=False).ok ):
+                        result += q + '|P1019|' + atom_url + '|P2701|http://www.wikidata.org/entity/Q267956|P1163|application/atom+xml|P407|' + lang + '\n'
+                    rss1_url = url + '/gateway/plugin/WebFeedGatewayPlugin/rss'
+                    if (requests.get(rss1_url, headers=HEADERS, verify=False).ok ):
+                        result += q + '|P1019|' + rss1_url + '|P2701|http://www.wikidata.org/entity/Q45432|P1163|application/rdf+xml|P407|' + lang + '\n'
+                    rss2_url = url + '/gateway/plugin/WebFeedGatewayPlugin/rss2'
+                    if (requests.get(rss2_url, headers=HEADERS, verify=False).ok ):
+                        result += q + '|P1019|' + rss2_url + '|P2701|http://www.wikidata.org/entity/Q45432|P1163|application/rss+xml|P407|' + lang + '\n'
+                    oai_url = url + '/oai?verb=Identify'
+                    if (requests.get(oai_url, headers=HEADERS, verify=False).ok ):
+                        result += q + '|P1019|' + oai_url + '|P2701|http://www.wikidata.org/entity/Q2430433|P407|' + lang + '\n'
+                if (data and data[0]['softwares'] and data[0]['softwares']['value'] == ''):
+                    version = get_xpath_as_string(item_tree,"//meta[@name='generator']/@content")
+                    result += '#add the software details\n'
+                    if (version != ''):
+                        result += q + '|P1813|http://www.wikidata.org/entity/Q1710177|P348|'+ version[:20] + '\n'
+                    else:
+                        result += q + '|P1813|http://www.wikidata.org/entity/Q1710177\n'
+                        
                     
                 return result + "#end quickstatemnts\n\nURL \"" + url + "\" appears lead to an OJS journal"
 
